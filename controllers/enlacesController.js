@@ -1,83 +1,128 @@
 const Enlaces = require('../models/Enlace');
-const {validationResult} = require('express-validator');
 const shortid = require('shortid');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcrypt')
+const { validationResult } = require('express-validator');
 
 exports.nuevoEnlace = async (req, res, next) => {
-
-//Revisar si hay errores
-
-const errores = validationResult(req);
-if(!errores.isEmpty()){
-    return res.status(400).json({errores: errores.array() });
-}
-
-const {nombre_original, password} = req.body;
-
-//Crear objeto de enlace
-const enlace = new Enlaces();
-enlace.url = shortid.generate();
-enlace.nombre = shortid.generate();
-enlace.nombre_original = nombre_original;
-
-//Si el usuario esta autenticado
-if(req.usuario){
-    const {password, descargas} = req.body;
-    //Asignar a enlace el numero de descargas
-    if(descargas){
-        enlace.descargas = descargas;
-    }
-    //Asignar password
-    if(password){
-        const salt = await bcrypt.genSalt(10);
-        enlace.password = await bcrypt.hash(password, salt);
-    }
-    //Asignar el autor
-    enlace.autor = req.usuario.id;
-}
-
-//Almacenar en BBDD
-try {
-    await enlace.save();
-     return res.json({ msg: `${enlace.url}`});
-    next();
-} catch (error) {
-    console.log(error);
-}
-
-}
-
-//Obtener todos los enlaces
-exports.obtenerEnlaces = async (req, res, next) => {
     
-    //Verificar si existe el enlace
-    const {url} = req.params;
-
-    const enlace = await Enlaces.findOne({url});
-
-    if(!enlace){
-        return res.status(404).json({msg: 'Enlace no encontrado'});
-        next();
+    // Revisar si hay errores
+    const errores = validationResult(req);
+    if(!errores.isEmpty()) {
+        return res.status(400).json({errores: errores.array()});
     }
-    console.log(enlace);
-    res.json({archivo: enlace.nombre});
 
-    //Si las descargas son iguales a 1: BORRAR EL ARCHIVO
-    const {descargas, nombre} = enlace;
+    // console.log(req.body);
 
-    if(descargas === 1){
-        console.log('Solo 1 descarga');
+    // Crear un objeto de Enlace
+    const { nombre_original, nombre } = req.body;
 
-        //Eliminar el archivo
-        req.archivo = nombre;
-        //Eliminar referencia BBDD
-        await Enlaces.findOneAndRemove(req.params.url);
-        next();
+    const enlace = new Enlaces();
+    enlace.url = shortid.generate();
+    enlace.nombre = nombre;
+    enlace.nombre_original = nombre_original;
+    
 
-    }else{
-        console.log('Mas de 1 descarga');
-        enlace.descargas--;
+    // Si el usuario esta autenticado
+    if(req.usuario) {
+        const { password, descargas } = req.body;
+
+        // Asignar a enlace el número de descargas
+        if(descargas) {
+            enlace.descargas = descargas;
+        }
+
+        // asignar un password
+        if(password) {
+            const salt = await bcrypt.genSalt(10);
+            enlace.password = await bcrypt.hash( password, salt );
+        }
+
+        // Asignar el autor
+        enlace.autor = req.usuario.id
+    }
+
+    // Almacenar en la BD
+    try {
         await enlace.save();
+        return res.json({ msg : `${enlace.url}` });
+        next();
+    } catch (error) {
+        console.log(error);
     }
-    //Si las descargas son > 1: RESTAR DESCARGA
 }
+
+// Obtiene un listado de todso los enlaces
+exports.todosEnlaces = async (req, res) => {
+    try {
+        const enlaces = await Enlaces.find({}).select('url -_id');
+        res.json({enlaces});
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+// Retorna si el enlace tiene password o no
+exports.tienePassword = async (req, res, next) => {
+
+    // console.log(req.params.url);
+    const { url } = req.params;
+
+    console.log(url);
+
+    // Verificar si existe el enlace
+    const enlace = await Enlaces.findOne({ url });
+
+    if(!enlace) {
+        res.status(404).json({msg: 'Ese Enlace no existe'});
+        return next();
+    }
+
+    if(enlace.password) {
+        return res.json({ password: true, enlace: enlace.url });
+    }
+
+    next();
+}
+
+// Verifica si el password es Correcto
+exports.verificarPassword = async (req, res, next) => {
+    const { url } = req.params;
+    const { password} = req.body;
+
+    // Consultar por el enlace
+    const enlace = await Enlaces.findOne({ url });
+
+    // Verificar el password
+    if(bcrypt.compareSync( password, enlace.password )) {
+        // Permitirle al usuario descargar el archivo
+        next();
+    } else {
+        return res.status(401).json({msg: 'Password Incorrecto'})
+    }
+
+   
+}
+
+
+// Obtener el enlace
+exports.obtenerEnlace = async (req, res, next) => {
+
+    // console.log(req.params.url);
+    const { url } = req.params;
+
+    console.log(url);
+
+    // Verificar si existe el enlace
+    const enlace = await Enlaces.findOne({ url });
+
+    if(!enlace) {
+        res.status(404).json({msg: 'Ese Enlace no existe'});
+        return next();
+    }
+
+    // Si el enlace existe
+    res.json({archivo: enlace.nombre, password: false})
+
+    next();
+}
+
